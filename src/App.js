@@ -1,70 +1,84 @@
-import React, { Component } from "react";
-import SimpleStorageContract from "./contracts/SimpleStorage.json";
-import getWeb3 from "./getWeb3";
-
-import "./App.css";
+import React, { Component } from 'react'
+import Web3 from 'web3'
+import './App.css'
+import { TODO_LIST_ABI, TODO_LIST_ADDRESS } from './config'
+import TodoList from './TodoList'
 
 class App extends Component {
-  state = { storageValue: 0, web3: null, accounts: null, contract: null };
+  componentWillMount() {
+    this.loadBlockchainData()
+  }
 
-  componentDidMount = async () => {
-    try {
-      // Get network provider and web3 instance.
-      const web3 = await getWeb3();
-
-      // Use web3 to get the user's accounts.
-      const accounts = await web3.eth.getAccounts();
-
-      // Get the contract instance.
-      const networkId = await web3.eth.net.getId();
-      const deployedNetwork = SimpleStorageContract.networks[networkId];
-      const instance = new web3.eth.Contract(
-        SimpleStorageContract.abi,
-        deployedNetwork && deployedNetwork.address,
-      );
-
-      // Set web3, accounts, and contract to the state, and then proceed with an
-      // example of interacting with the contract's methods.
-      this.setState({ web3, accounts, contract: instance }, this.runExample);
-    } catch (error) {
-      // Catch any errors for any of the above operations.
-      alert(
-        `Failed to load web3, accounts, or contract. Check console for details.`,
-      );
-      console.error(error);
+  async loadBlockchainData() {
+    const web3 = new Web3(Web3.givenProvider || "http://localhost:8545")
+    const accounts = await web3.eth.getAccounts()
+    this.setState({ account: accounts[0] })
+    const todoList = new web3.eth.Contract(TODO_LIST_ABI, TODO_LIST_ADDRESS)
+    this.setState({ todoList })
+    const taskCount = await todoList.methods.taskCount().call()
+    this.setState({ taskCount })
+    for (var i = 1; i <= taskCount; i++) {
+      const task = await todoList.methods.tasks(i).call()
+      this.setState({
+        tasks: [...this.state.tasks, task]
+      })
     }
-  };
+    this.setState({ loading: false })
+  }
 
-  runExample = async () => {
-    const { accounts, contract } = this.state;
+  constructor(props) {
+    super(props)
+    this.state = {
+      account: '',
+      taskCount: 0,
+      tasks: [],
+      loading: true
+    }
 
-    // Stores a given value, 5 by default.
-    await contract.methods.set(5).send({ from: accounts[0] });
+    this.createTask = this.createTask.bind(this)
+    this.toggleCompleted = this.toggleCompleted.bind(this)
+  }
 
-    // Get the value from the contract to prove it worked.
-    const response = await contract.methods.get().call();
+  createTask(content) {
+    this.setState({ loading: true })
+    this.state.todoList.methods.createTask(content).send({ from: this.state.account })
+    .once('receipt', (receipt) => {
+      this.setState({ loading: false })
+    })
+  }
 
-    // Update state with the result.
-    this.setState({ storageValue: response });
-  };
+  toggleCompleted(taskId) {
+    this.setState({ loading: true })
+    this.state.todoList.methods.toggleCompleted(taskId).send({ from: this.state.account })
+    .once('receipt', (receipt) => {
+      this.setState({ loading: false })
+    })
+  }
 
   render() {
-    if (!this.state.web3) {
-      return <div>Loading Web3, accounts, and contract...</div>;
-    }
     return (
-      <div className="App">
-        <h1>Ethchess</h1>
-        <p>Your Truffle Box is installed and ready.</p>
-        <h2>Smart Contract Example</h2>
-        <p>
-          If your contracts compiled and migrated successfully, below will show
-          a stored value of 5 (by default).
-        </p>
-        <p>
-          Try changing the value stored on <strong>line 40</strong> of App.js.
-        </p>
-        <div>The stored value is: {this.state.storageValue}</div>
+      <div>
+        <nav className="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow">
+          <a className="navbar-brand col-sm-3 col-md-2 mr-0" href="http://www.dappuniversity.com/free-download" target="_blank">Dapp University | Todo List</a>
+          <ul className="navbar-nav px-3">
+            <li className="nav-item text-nowrap d-none d-sm-none d-sm-block">
+              <small><a className="nav-link" href="#"><span id="account"></span></a></small>
+            </li>
+          </ul>
+        </nav>
+        <div className="container-fluid">
+          <div className="row">
+            <main role="main" className="col-lg-12 d-flex justify-content-center">
+              { this.state.loading
+                ? <div id="loader" className="text-center"><p className="text-center">Loading...</p></div>
+                : <TodoList
+                  tasks={this.state.tasks}
+                  createTask={this.createTask}
+                  toggleCompleted={this.toggleCompleted} />
+              }
+            </main>
+          </div>
+        </div>
       </div>
     );
   }
